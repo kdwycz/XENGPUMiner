@@ -1,3 +1,13 @@
+# 相对于原版改动
+
+加入了proxy和host两个参数，来解决网络不方便的问题。提了PR但是上游并不想合并
+
+需要自备socks5协议的proxy地址，或者对 http://xenminer.mooo.com 做反向代理（nginx/cloudflare worker）
+
+ > python3 miner.py --proxy=127.0.0.1:1080
+ > 
+ > python3 miner.py --host=http://xenminer.kdwycz.com
+
 # XENBlocks GPU Miner
 
 XENBlocks GPU Miner is a high-performance GPU mining software developed for XENBlocks Blockchain. 
