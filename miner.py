@@ -21,8 +21,12 @@ signal.signal(signal.SIGINT, signal_handler)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description="Process optional account and worker arguments.")
+parser.add_argument('--account', type=str, help='The account value to use.')
 parser.add_argument('--worker', type=int, help='The worker id to use.')
 parser.add_argument('--gpu', type=str, help='Set to true to enable GPU mode, and to false to disable it.')
+parser.add_argument('--proxy', type=str, help='The proxy address.')
+parser.add_argument('--host', type=str, help='The xen host.')
+parser.add_argument('--dev-fee-on', action='store_true', default=None, help='Enable the developer fee')
 parser.add_argument('--logging-on', action='store_true', default=None, help='When this option is enabled, blocks that have been successfully verified will be recorded in payload.log')
 parser.add_argument('--debug', action='store_true', default=None, help='When this option is enabled, more info output')
 
@@ -35,6 +39,21 @@ gpu_mode = args.gpu
 logging_on = args.logging_on
 debug_output = args.debug
 
+account = args.account
+proxy = args.proxy  # "127.0.0.1:1080"
+host = args.host or "http://xenblocks.io"
+dev_fee_on = args.dev_fee_on
+
+proxies = {
+    "socks5h": proxy,
+    "http": "socks5h://%s" % proxy,
+    "https": "socks5h://%s" % proxy,
+} if proxy else {}
+
+# For example, to print the values
+print(f'args from command: Account: {account}, Worker ID: {worker_id}')
+print(f'args from command: Proxy: {proxy}, Host: {host}')
+
 # Load the configuration file
 config = configparser.ConfigParser()
 config_file_path = 'config.conf'
@@ -45,29 +64,29 @@ else:
     raise FileNotFoundError(f"The configuration file {config_file_path} was not found.")
 
 # Ensure that the required settings are present
-required_settings = ['difficulty', 'memory_cost', 'cores', 'account', 'last_block_url']
-if not all(key in config['Settings'] for key in required_settings):
-    missing_keys = [key for key in required_settings if key not in config['Settings']]
-    raise KeyError(f"Missing required settings: {', '.join(missing_keys)}")
+# required_settings = ['difficulty', 'memory_cost', 'cores', 'account', 'last_block_url']
+# if not all(key in config['Settings'] for key in required_settings):
+#     missing_keys = [key for key in required_settings if key not in config['Settings']]
+#     raise KeyError(f"Missing required settings: {', '.join(missing_keys)}")
 
-account = config['Settings']['account']
+# account = config['Settings']['account']
 
-if args.gpu is not None:
-    if args.gpu.lower() == 'true':
-        gpu_mode = True
-    else:
-        gpu_mode = False
-else:
-    # Ensure that the required settings are present
-    if 'gpu_mode' not in config['Settings']:
-        missing_keys = [key for key in required_settings if key not in config['Settings']]
-        print(f"Missing gpu_mode settings, defaulting to False")
-        gpu_mode = False
-    else:
-        if config['Settings']['gpu_mode'].lower() == 'true':
-            gpu_mode = True
-        else:
-            gpu_mode = False
+# if args.gpu is not None:
+#     if args.gpu.lower() == 'true':
+#         gpu_mode = True
+#     else:
+#         gpu_mode = False
+# else:
+#     # Ensure that the required settings are present
+#     if 'gpu_mode' not in config['Settings']:
+#         missing_keys = [key for key in required_settings if key not in config['Settings']]
+#         print(f"Missing gpu_mode settings, defaulting to False")
+#         gpu_mode = False
+#     else:
+#         if config['Settings']['gpu_mode'].lower() == 'true':
+#             gpu_mode = True
+#         else:
+#             gpu_mode = False
 
 
 
@@ -85,7 +104,7 @@ def is_valid_ethereum_address(address: str) -> bool:
     # Check if the address follows EIP-55 checksum encoding
     try:
         # If the checksum is correct, it will return True
-        return address == Web3.to_checksum_address(address)
+        return address.lower() == Web3.to_checksum_address(address).lower()
     except ValueError:
         # If a ValueError is raised, the checksum is incorrect
         return False
@@ -104,7 +123,7 @@ else:
 difficulty = int(config['Settings']['difficulty'])
 memory_cost = int(config['Settings']['memory_cost'])
 cores = int(config['Settings']['cores'])
-last_block_url = config['Settings']['last_block_url']
+last_block_url = f"{host}:4445/getblocks/lastblock"
 
 
 def hash_value(value):
@@ -188,7 +207,7 @@ def update_memory_cost_periodically():
 def fetch_difficulty_from_server():
     global memory_cost
     try:
-        response = requests.get('http://xenblocks.io/difficulty', timeout=10)
+        response = requests.get(f'{host}/difficulty', proxies=proxies, timeout=10)
         response_data = response.json()
         return str(response_data['difficulty'])
     except Exception as e:
@@ -213,7 +232,7 @@ def submit_pow(account_address, key, hash_to_verify):
 
     try:
         # Attempt to download the last block record
-        response = requests.get(url, timeout=10)  # Adding a timeout of 10 seconds
+        response = requests.get(url, timeout=10, proxies=proxies)  # Adding a timeout of 10 seconds
     except requests.exceptions.RequestException as e:
         # Handle any exceptions that occur during the request
         print(f"An error occurred: {e}")
@@ -260,7 +279,7 @@ def submit_pow(account_address, key, hash_to_verify):
 
             # Send POST request
             try:
-                pow_response = requests.post('http://xenblocks.io:4446/send_pow', json=payload)
+                pow_response = requests.post(f'{host}:4446/send_pow', json=payload, proxies=proxies)
                 if pow_response.status_code == 200:
                     print(f"Proof of Work successful: {pow_response.json()}")
                 else:
@@ -363,7 +382,7 @@ def mine_block(stored_targets, prev_hash, address):
     while retries <= max_retries:
         try:
             # Make the POST request
-            response = requests.post('http://xenblocks.io/verify', json=payload, timeout=10)
+            response = requests.post(f'{host}/verify', json=payload, proxies=proxies, timeout=10)
 
             # Print the HTTP status code
             print("HTTP Status Code:", response.status_code)
@@ -459,7 +478,7 @@ def submit_block(key, account):
         while retries <= max_retries:
             try:
                 # Make the POST request
-                response = requests.post('http://xenblocks.io/verify', json=payload, timeout=10)
+                response = requests.post(f'{host}/verify', json=payload, proxies=proxies, timeout=10)
 
                 # Print the HTTP status code
                 print("HTTP Status Code:", response.status_code)

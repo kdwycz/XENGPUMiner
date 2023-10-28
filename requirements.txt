@@ -1,5 +1,5 @@
 passlib
-requests
+requests[socks]
 tqdm
 argon2_cffi 
 web3==6.11.1
